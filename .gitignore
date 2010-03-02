@@ -1,0 +1,4 @@
+.dep.inc
+Makefile-node.audio.mk
+nbproject/*
+*.o
