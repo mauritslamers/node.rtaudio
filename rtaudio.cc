@@ -10,30 +10,12 @@
 #include <v8.h>
 #include <node.h>
 #include <node_events.h>
+#include <converter.h>
 #include <RtAudio.h>
 #include <RtError.h>
 
 using namespace v8;
-
-//--------------------------------------
-//  CONVERSION FUNCTIONS
-//--------------------------------------
-/**
- *  Tries to convert a v8 string to std::string
- *
- *  @return std::string
- */
-std::string stdString(Handle<Value> const &from)
-{
-    static const std::string emptyString = "<empty string>";
-    String::Utf8Value utf8String(from);
-    const char* s = *utf8String;
-    if(s)
-    {
-        return std::string(s, utf8String.length());
-    }
-    return emptyString;
-}
+using namespace converter;
 //--------------------------------------
 //  FILE WIDE VARS
 //--------------------------------------
@@ -55,10 +37,10 @@ static Persistent<ObjectTemplate> rtaudio_template;
  *
  *  @return Handle<Array>
  */
-Local<Array> deviceInfoTo(RtAudio::DeviceInfo &info)
+Local<Object> deviceInfoTo(RtAudio::DeviceInfo &info)
 {
     HandleScope scope;
-    Local<Array> device = Array::New(8);
+    Local<Object> device = Object::New();
 
     device->Set(String::New("probed"), Boolean::New(info.probed));
     device->Set(String::New("name"), String::New(info.name.c_str()));
@@ -81,12 +63,12 @@ Local<Array> deviceInfoTo(RtAudio::DeviceInfo &info)
  *
  *  @return Handle<Array>
  */
-RtAudio::DeviceInfo deviceInfoFrom(Local<Array> device)
+RtAudio::DeviceInfo deviceInfoFrom(Local<Object> device)
 {
     HandleScope scope;
     RtAudio::DeviceInfo info;
     info.probed = device->Get(String::New("probed"))->BooleanValue();
-    info.name   = stdString(device->Get(String::New("name")));
+    info.name   = toStdString(device->Get(String::New("name")));
     info.outputChannels = device->Get(String::New("outputChannels"))->IntegerValue();
     info.inputChannels  = device->Get(String::New("inputChannels"))->IntegerValue();
     info.duplexChannels = device->Get(String::New("duplexChannels"))->IntegerValue();
@@ -101,6 +83,119 @@ RtAudio::DeviceInfo deviceInfoFrom(Local<Array> device)
     info.sampleRates = infoRates;
     
     return info;
+}
+/**
+ *  Copies a StreamParameters struct to js object
+ *
+ *  @return Local<Object>
+ */
+Local<Object> streamParametersTo(RtAudio::StreamParameters& params)
+{
+    HandleScope scope;
+    Local<Object> to = Object::New();
+
+    to->Set(String::New("deviceId"), Boolean::New(params.deviceId));
+    to->Set(String::New("nChannels"), Uint32::New(params.nChannels));
+    to->Set(String::New("firstChannel"), Uint32::New(params.firstChannel));
+
+    return scope.Close(to);
+}
+/**
+ *  Copies a js object to StreamParameters struct
+ *
+ *  @return Handle<Array>
+ */
+RtAudio::StreamParameters streamParametersFrom(Local<Object> from)
+{
+    RtAudio::StreamParameters params;
+    params.deviceId = toBool(from->Get(String::New("probed")));
+    params.nChannels = toUint32(from->Get(String::New("nChannels")));
+    params.firstChannel = toUint32(from->Get(String::New("outputChannels")));
+    
+    return params;
+}
+/**
+ *  Makes a js object from RtAudioStreamFlags.
+ *
+ *  @return Handle<Value>
+ */
+Handle<Value> streamFlagsTo(RtAudioStreamFlags& flags)
+{
+    Local<Object> to = Object::New();
+    to->Set(String::New("nonInterleaved"), Boolean::New(flags & RTAUDIO_NONINTERLEAVED));
+    to->Set(String::New("minimizeLatency"), Boolean::New(flags & RTAUDIO_MINIMIZE_LATENCY));
+    to->Set(String::New("hogDevice"), Boolean::New(flags & RTAUDIO_HOG_DEVICE));
+    return to;
+}
+/**
+ *  Makes RtAudioStreamFlags from an object.
+ *
+ *  @return RtAudioStreamFlags
+ */
+RtAudioStreamFlags streamFlagsFrom(Local<Object> from)
+{
+    RtAudioStreamFlags flags = 0;
+    bool nonInterleaved = toBool(from->Get(String::New("nonInterleaved")));
+    bool minimizeLatency = toBool(from->Get(String::New("minimizeLatency")));
+    bool hogDevice = toBool(from->Get(String::New("hogDevice")));
+
+    if(nonInterleaved)
+        flags |= RTAUDIO_NONINTERLEAVED;
+    if(minimizeLatency)
+        flags |= RTAUDIO_MINIMIZE_LATENCY;
+    if(hogDevice)
+        flags |= RTAUDIO_HOG_DEVICE;
+    return flags;
+}
+/**
+ *  Copies a StreamOptions struct to js object.detail
+ *
+ *  @return Handle<Value>
+ */
+Handle<Value> streamOptionsTo(RtAudio::StreamOptions& options)
+{
+    HandleScope scope;
+    Local<Object> to = Object::New();
+    to->Set(String::New("flags"), streamFlagsTo(options.flags));
+    to->Set(String::New("numberOfBuffers"), Uint32::New(options.numberOfBuffers));
+    to->Set(String::New("streamName"), String::New(options.streamName.c_str()));
+    to->Set(String::New("priority"), Integer::New(options.priority));
+    return scope.Close(to);
+}
+/**
+ *  Copies a js object to StreamOptions struct
+ *
+ *  @return RtAudio::StreamOptions
+ */
+RtAudio::StreamOptions streamOptionsFrom(Local<Object> from)
+{
+    RtAudio::StreamOptions options;
+    options.flags = streamFlagsFrom(Object::Cast(*from->Get(String::New("flags"))));
+    options.numberOfBuffers = toUint32(from->Get(String::New("numberOfBuffers")));
+    options.streamName = toStdString(from->Get(String::New("streamName")));
+    options.priority = toInt32(from->Get(String::New("priority")));
+    return options;
+}
+/**
+ *  Copies a js string to RtAudioFormat
+ *
+ *  @return RtAudioFormat
+ */
+RtAudioFormat formatFrom(Local<String> from)
+{
+    std::string format = toStdString(from);
+    if(format == "sInt8")
+        return RTAUDIO_SINT8;
+    if(format == "sInt16")
+        return RTAUDIO_SINT16;
+    if(format == "sInt32")
+        return RTAUDIO_SINT32;
+    if(format == "float32")
+        return RTAUDIO_FLOAT32;
+    if(format == "float64")
+        return RTAUDIO_FLOAT64;
+
+    return RTAUDIO_FLOAT32; // default
 }
 /**
  *  Returns the compiled apis.
@@ -140,7 +235,7 @@ Handle<Value> enumerateDevices(const Arguments& args)
     for(int i = 0; i < deviceCount; i++)
     {
         info = audio.getDeviceInfo(i);
-        Local<Array> device = deviceInfoTo(info);
+        Local<Object> device = deviceInfoTo(info);
         // add this device to the list of devices
         devices->Set(Integer::New(i), device);
     }
@@ -191,6 +286,56 @@ Handle<Value> getDeviceInfo(const Arguments& args)
 {
     HandleScope scope;
     RtAudio* audio = unwrapRtAudio(args.Holder());
+    uint32_t deviceNumber = toUint32(args[0]);
+    RtAudio::DeviceInfo info = audio->getDeviceInfo(deviceNumber);
+    return deviceInfoTo(info);
+}
+/**
+ *  Wraps RtAudio::getDefaultOutputDevice.
+ *
+ *  @return Number
+ */
+Handle<Value> getDefaultOutputDevice(const Arguments& args)
+{
+    HandleScope scope;
+    RtAudio* audio = unwrapRtAudio(args.Holder());
+    uint32_t device = audio->getDefaultOutputDevice();
+    return Uint32::New(device);
+}
+/**
+ *  Wraps RtAudio::getDefaultInputDevice.
+ *
+ *  @return Number
+ */
+Handle<Value> getDefaultInputDevice(const Arguments& args)
+{
+    HandleScope scope;
+    RtAudio* audio = unwrapRtAudio(args.Holder());
+    uint32_t device = audio->getDefaultInputDevice();
+    return Uint32::New(device);
+}
+/**
+ *  Wraps RtAudio::openStream.
+ *
+ *  @return Undefined
+ */
+Handle<Value> openStream(const Arguments& args)
+{
+    RtAudio* audio = unwrapRtAudio(args.Holder());
+    RtAudio::StreamParameters outputParameters = streamParametersFrom(Object::Cast(*args[0]));
+    RtAudio::StreamParameters inputParameters = streamParametersFrom(Object::Cast(*args[1]));
+    RtAudioFormat format = formatFrom(String::Cast(*args[2]));
+    unsigned int sampleRate = toUint32(args[3]);
+    
+}
+/**
+ *  A to string function.
+ *
+ *  @return a string
+ */
+Handle<Value> toString(const Arguments& args)
+{
+    return String::New("[native RtAudio]");
 }
 /**
  *  Creates an object template for rtaudio.
@@ -204,10 +349,12 @@ Handle<ObjectTemplate> getRtAudioTemplate()
     // right now we're only exposing two functions, we'll add to this later
     tmplt->Set(String::New("getCurrentApi"), FunctionTemplate::New(getCurrentApi));
     tmplt->Set(String::New("getDeviceCount"), FunctionTemplate::New(getDeviceCount));
-    //tmplt->Set(String::New("getDeviceInfo"))
+    tmplt->Set(String::New("getDeviceInfo"), FunctionTemplate::New(getDeviceInfo));
+    tmplt->Set(String::New("getDefaultOutputDevice"), FunctionTemplate::New(getDefaultOutputDevice));
+    tmplt->Set(String::New("getDefaultInputDevice"), FunctionTemplate::New(getDefaultInputDevice));
+    tmplt->Set(String::New("toString"), FunctionTemplate::New(toString));
     return scope.Close(tmplt);
 }
-
 /**
  *  Creates a new RtAudio instance to track through js.
  *  Where do we destroy these objects? How is that handled in v8?
@@ -259,6 +406,10 @@ Handle<Value> NewRtAudio(const Arguments& args)
     // outer handle scope
     return scope.Close(wrapper);
 }
+
+//--------------------------------------
+//  TESTS
+//--------------------------------------
 
 //--------------------------------------
 //  INIT HOOK
@@ -319,4 +470,5 @@ extern "C" void init (Handle<Object> target)
         }
     }
     target->Set(String::New("apiMap"), toExternalApiMap);
+
 }
