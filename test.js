@@ -1,8 +1,12 @@
-///js///////////////////////////////////////////////////////////////////////////
-// Copyleft Schell Scivally Enterprise - Civilian Software
-// All rights reversed
 ////////////////////////////////////////////////////////////////////////////////
-
+// Copyleft 
+//  |      _| |    |   
+//    \    _|  _|    \ 
+// _| _| _|  \__| _| _| 
+// All rights reversed
+// Written by Schell Scivally (efnx.com, happyfuntimehacking.com)
+// Thu Apr 15 15:28:42 PDT 2010 
+////////////////////////////////////////////////////////////////////////////////
 var sys = require('sys'), rtaudio = require('./rtaudio_binding');
 
 sys.puts("\nRtAudio Settings:\n");

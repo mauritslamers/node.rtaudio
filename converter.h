@@ -1,9 +1,12 @@
-/* 
- * File:   converter.h
- * Author: Schell Scivally <efsubenovex@gmail.com> = Schell Scivally
- *
- * Created on March 4, 2010, 4:47 PM
- */
+////////////////////////////////////////////////////////////////////////////////
+// Copyleft 
+//  |      _| |    |   
+//    \    _|  _|    \ 
+// _| _| _|  \__| _| _| 
+// All rights reversed
+// Written by Schell Scivally (efnx.com, happyfuntimehacking.com)
+// Thu Apr 15 15:25:35 PDT 2010 
+////////////////////////////////////////////////////////////////////////////////
 
 #ifndef _CONVERTER_H
 #define	_CONVERTER_H
