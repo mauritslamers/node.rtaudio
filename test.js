@@ -14,7 +14,7 @@ sys.puts("  All APIs: " + sys.inspect(rtaudio.apiMap));
 sys.puts("  Compiled APIs:  " + rtaudio.getCompiledApis());
 sys.puts("  Devices: " + sys.inspect(rtaudio.enumerateDevices()));
 sys.puts("  Creating new RtAudio instance:");
-var audio = rtaudio.New();
+var audio = rtaudio.createRtAudio();
 sys.puts("  " + audio);
 sys.puts("      Current API: " + audio.getCurrentApi());
 sys.puts("      Connected Devices: " + audio.getDeviceCount());

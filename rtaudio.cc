@@ -32,7 +32,10 @@ std::map<std::string, int> invertApiMap;
  *  Holds our template for RtAudio.
  */
 static Persistent<ObjectTemplate> rtaudio_template;
-
+/**
+ *  Holds our program context
+ */
+Persistent<Context> context;
 //--------------------------------------
 //  FILE WIDE FUNCTIONS
 //--------------------------------------
@@ -330,8 +333,10 @@ Handle<Value> openStream(const Arguments& args)
     RtAudio::StreamParameters inputParameters = streamParametersFrom(Object::Cast(*args[1]));
     RtAudioFormat format = formatFrom(String::Cast(*args[2]));
     unsigned int sampleRate = toUint32(args[3]);
-    
+    unsigned int bufferFrames = toUint32(args[4]);
 }
+
+
 /**
  *  A to string function.
  *
@@ -350,7 +355,7 @@ Handle<ObjectTemplate> getRtAudioTemplate()
     // create the object template for our js version of RtAudio
     Local<ObjectTemplate> tmplt = ObjectTemplate::New();
     tmplt->SetInternalFieldCount(1);
-    // right now we're only exposing two functions, we'll add to this later
+    // right now we're only exposing non audio functions, we'll add to this later
     tmplt->Set(String::New("getCurrentApi"), FunctionTemplate::New(getCurrentApi));
     tmplt->Set(String::New("getDeviceCount"), FunctionTemplate::New(getDeviceCount));
     tmplt->Set(String::New("getDeviceInfo"), FunctionTemplate::New(getDeviceInfo));
@@ -359,6 +364,7 @@ Handle<ObjectTemplate> getRtAudioTemplate()
     tmplt->Set(String::New("toString"), FunctionTemplate::New(toString));
     return scope.Close(tmplt);
 }
+
 /**
  *  Creates a new RtAudio instance to track through js.
  *  Where do we destroy these objects? How is that handled in v8?
@@ -414,7 +420,15 @@ Handle<Value> NewRtAudio(const Arguments& args)
 //--------------------------------------
 //  TESTS
 //--------------------------------------
-
+Handle<Value> callbackNow(const Arguments& args)
+{
+    HandleScope scope;
+    //Context::Scope context;
+    Local<Function> callback = Function::Cast(*args[0]);
+    //Handle<Value> argc = 0;
+//    Handle<Value> argv[argc] = {};
+//    callback.Call(context->Global(), 0, argv);
+}
 //--------------------------------------
 //  INIT HOOK
 //--------------------------------------
@@ -456,13 +470,13 @@ extern "C" void init (Handle<Object> target)
     // expose a function for enumerating all the hardware's devices
     target->Set(String::New("enumerateDevices"), FunctionTemplate::New(enumerateDevices)->GetFunction());
     // expose a function for creating new RtAudio instances
-    target->Set(String::New("New"), FunctionTemplate::New(NewRtAudio)->GetFunction());
+    target->Set(String::New("createRtAudio"), FunctionTemplate::New(NewRtAudio)->GetFunction());
+    // creating new stream options
+    target->Set(String::New("callbackNow"), FunctionTemplate::New(callbackNow)->GetFunction());
     // expose the api map
-    printf("%i apis listed\n", (int) apiMap.size());
     Local<Array> toExternalApiMap = Array::New(apiMap.size());
     for(int i = 0; i < apiMap.size(); i++)
     {
-        printf("    %i\n", i);
         try
         {
             toExternalApiMap->Set(Integer::New(i), String::New(apiMap.at(i).c_str()));
