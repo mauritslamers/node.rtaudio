@@ -323,15 +323,103 @@ Handle<Value> getDefaultInputDevice(const Arguments& args)
  *
  *  @return Undefined
  */
+ 
+ Function* jsCallBack;
+ 
+int RtCb(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames, double streamTime, RtAudioStreamStatus status, void* userData){
+  
+  HandleScope scope;
+  
+  unsigned int i,j;
+  double *buffer = (double *) outputBuffer;
+
+  //Handle<Function> *userCb = (Handle <Function>*)userData;
+  
+  Handle<Object> tmpObj = Object::New();
+  Handle<Value> bufSize = Number::New(nBufferFrames);
+  //Handle<Value> ret = jsCallBack->Call(tmpObj,1,&bufSize);
+  
+  //Handle<Value> ret = (*userCb)->Call(tmpObj,1,&bufSize);
+  //Local<Value> left;
+  //Local<Value> right;
+  double sample = 0.0;
+  for( i=0;i<nBufferFrames;i++){
+    for( j=0; j<2; j++){
+      *buffer++ = sample;
+      if(sample<0.75) sample += 0.01;
+      if(sample>0.75) sample = -0.75;
+    }
+  }
+  
+  return 0;
+  
+} 
+ 
+//openStream(func) 
 Handle<Value> openStream(const Arguments& args)
 {
-    RtAudio* audio = unwrapRtAudio(args.Holder());
-    RtAudio::StreamParameters outputParameters = streamParametersFrom(Object::Cast(*args[0]));
-    RtAudio::StreamParameters inputParameters = streamParametersFrom(Object::Cast(*args[1]));
-    RtAudioFormat format = formatFrom(String::Cast(*args[2]));
-    unsigned int sampleRate = toUint32(args[3]);
+    HandleScope scope;
     
+    if(args.Length() == 0) return Undefined();
+    
+    RtAudio* audio = unwrapRtAudio(args.Holder());
+    //RtAudio::StreamParameters outputParameters = streamParametersFrom(Object::Cast(*args[0]));
+    //RtAudio::StreamParameters inputParameters = streamParametersFrom(Object::Cast(*args[1]));
+    //RtAudioFormat format = formatFrom(String::Cast(*args[2]));
+    //unsigned int sampleRate = toUint32(args[3]);
+    
+    //for the moment we are making the decisions
+    RtAudio::StreamParameters outputParams;
+    outputParams.deviceId = audio->getDefaultOutputDevice();
+    outputParams.nChannels = 2;
+    outputParams.firstChannel = 0;
+    unsigned int sampleRate = 44100;
+    unsigned int bufferFrames = 256;
+    double data[2];
+    jsCallBack = Function::Cast(*args[0]);
+    
+    printf("About to start the open stream");
+    // function call is openStream(outputParams,inputParams,sampleType,sampleRate,&numFrames,&callback, userData)
+    try {
+      audio->openStream(&outputParams,NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, &RtCb, (void *)&data);
+    }
+    catch (RtError &e) {
+      e.printMessage();
+      exit (0);
+    }
 }
+
+
+Handle<Value> stopStream(const Arguments &args){
+  HandleScope scope;
+  
+  RtAudio* audio = unwrapRtAudio(args.Holder());
+
+  try{
+    audio->stopStream();    
+  }
+  catch(RtError& e){
+    e.printMessage();
+  }
+  
+}
+
+Handle<Value> startStream(const Arguments &args){
+  HandleScope scope;
+  
+  RtAudio* audio = unwrapRtAudio(args.Holder());
+
+  try{
+    audio->startStream();    
+  }
+  catch(RtError& e){
+    e.printMessage();
+  }
+  
+  
+}
+
+
 /**
  *  A to string function.
  *
@@ -357,6 +445,9 @@ Handle<ObjectTemplate> getRtAudioTemplate()
     tmplt->Set(String::New("getDefaultOutputDevice"), FunctionTemplate::New(getDefaultOutputDevice));
     tmplt->Set(String::New("getDefaultInputDevice"), FunctionTemplate::New(getDefaultInputDevice));
     tmplt->Set(String::New("toString"), FunctionTemplate::New(toString));
+    tmplt->Set(String::New("openStream"), FunctionTemplate::New(openStream));
+    tmplt->Set(String::New("startStream"), FunctionTemplate::New(startStream));
+    tmplt->Set(String::New("stopStream"), FunctionTemplate::New(stopStream));  
     return scope.Close(tmplt);
 }
 /**
@@ -457,7 +548,10 @@ extern "C" void init (Handle<Object> target)
     target->Set(String::New("enumerateDevices"), FunctionTemplate::New(enumerateDevices)->GetFunction());
     // expose a function for creating new RtAudio instances
     target->Set(String::New("New"), FunctionTemplate::New(NewRtAudio)->GetFunction());
+
+
     // expose the api map
+    /*
     printf("%i apis listed\n", (int) apiMap.size());
     Local<Array> toExternalApiMap = Array::New(apiMap.size());
     for(int i = 0; i < apiMap.size(); i++)
@@ -473,6 +567,7 @@ extern "C" void init (Handle<Object> target)
             e.what();
         }
     }
-    target->Set(String::New("apiMap"), toExternalApiMap);
+    target->Set(String::New("apiMap"), toExternalApiMap); */
 
 }
+
