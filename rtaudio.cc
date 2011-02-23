@@ -18,6 +18,55 @@
 #include <RtAudio.h>
 #include <RtError.h>
 
+#ifndef SRC_RTAUDIO_BINDINGS
+#define SRC_RTAUDIO_BINDINGS
+
+#define REQ_INT_ARG(I, VAR) \
+if (args.Length() <= (I) || !args[I]->IsInt32()) \
+return ThrowException(Exception::TypeError( \
+String::New("Argument " #I " must be an integer"))); \
+int32_t VAR = args[I]->Int32Value();
+
+#define REQ_UINT_ARG(I, VAR) \
+if (args.Length() <= (I) || !args[I]->IsUint32()) \
+return ThrowException(Exception::TypeError( \
+String::New("Argument " #I " must be an integer"))); \
+uint32_t VAR = args[I]->Uint32Value();
+
+#define REQ_STR_ARG(I, VAR) \
+if (args.Length() <= (I) || !args[I]->IsString()) \
+return ThrowException(Exception::TypeError( \
+String::New("Argument " #I " must be a string"))); \
+String::Utf8Value VAR(args[I]->ToString());
+
+#define REQ_BOOL_ARG(I, VAR) \
+if (args.Length() <= (I) || !args[I]->IsBoolean()) \
+return ThrowException(Exception::TypeError( \
+String::New("Argument " #I " must be a boolean"))); \
+bool VAR = args[I]->BooleanValue();
+
+#define REQ_EXT_ARG(I, VAR) \
+if (args.Length() <= (I) || !args[I]->IsExternal()) \
+return ThrowException(Exception::TypeError( \
+String::New("Argument " #I " invalid"))); \
+Local<External> VAR = Local<External>::Cast(args[I]);
+
+#define REQ_FUN_ARG(I, VAR) \
+if (args.Length() <= (I) || !args[I]->IsFunction()) \
+return ThrowException(Exception::TypeError( \
+String::New("Argument " #I " must be a function"))); \
+Local<Function> VAR = Local<Function>::Cast(args[I]);
+
+#define OPTIONAL_FUN_ARG(I, VAR) \
+Handle<Value> VAR; \
+if (args.Length() > (I) && args[I]->IsFunction()) {\
+    VAR = args[I]; \
+} else { \
+    VAR = Null(); \
+}
+
+#endif  // SRC_RTAUDIO_BINDINGS
+
 using namespace v8;
 using namespace converter;
 //--------------------------------------
@@ -324,7 +373,27 @@ Handle<Value> getDefaultInputDevice(const Arguments& args)
  *  @return Undefined
  */
  
- Function* jsCallBack;
+ /*
+ Persistent<Function> callback;
+
+ //in C++ function
+ if (args.Length() > 0)
+ {
+ callback = Persistent<Function>::New(Handle<Function>::Cast(args[0]));
+ }
+
+ //where you use the callback
+ if (!callback.IsEmpty())
+ {
+ 	Handle<Value> arguments[1];
+ 	arguments[0] = String::New("Hello, World!");
+ 	callback->Call(context->Global(), 1, arguments);
+ }
+ */
+ 
+ 
+ Handle<Function> jsCallBack;
+ bool triggered = false;
  
 int RtCb(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames, double streamTime, RtAudioStreamStatus status, void* userData){
   
@@ -336,8 +405,16 @@ int RtCb(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames, doub
   //Handle<Function> *userCb = (Handle <Function>*)userData;
   
   Handle<Object> tmpObj = Object::New();
-  Handle<Value> bufSize = Number::New(nBufferFrames);
-  //Handle<Value> ret = jsCallBack->Call(tmpObj,1,&bufSize);
+  Handle<Value> arguments[1];
+  Local<Value> ret;
+  arguments[0] = Number::New(nBufferFrames);
+  //if(!jsCallBack.IsEmpty() && triggered){
+  //  printf("Callback is not empty!!\n\0");
+  //  triggered = true;
+  //} 
+  if ( status ) std::cout << "Stream underflow detected!" << std::endl;
+  //if(!jsCallBack.IsEmpty()) ret = jsCallBack->Call(tmpObj,1,arguments);
+  if(!jsCallBack.IsEmpty()) ret = jsCallBack->Call(tmpObj,1,arguments);
   
   //Handle<Value> ret = (*userCb)->Call(tmpObj,1,&bufSize);
   //Local<Value> left;
@@ -360,7 +437,7 @@ Handle<Value> openStream(const Arguments& args)
 {
     HandleScope scope;
     
-    if(args.Length() == 0) return Undefined();
+    //if(args.Length() == 0) return Undefined();
     
     RtAudio* audio = unwrapRtAudio(args.Holder());
     //RtAudio::StreamParameters outputParameters = streamParametersFrom(Object::Cast(*args[0]));
@@ -373,20 +450,39 @@ Handle<Value> openStream(const Arguments& args)
     outputParams.deviceId = audio->getDefaultOutputDevice();
     outputParams.nChannels = 2;
     outputParams.firstChannel = 0;
-    unsigned int sampleRate = 44100;
-    unsigned int bufferFrames = 256;
-    double data[2];
-    jsCallBack = Function::Cast(*args[0]);
     
-    printf("About to start the open stream");
+    RtAudio::StreamOptions outputOpts;
+    outputOpts.numberOfBuffers = 512;
+    
+    unsigned int sampleRate = 44100;
+    unsigned int bufferFrames = 44100;
+    double data[2];
+    
+    if (args.Length() <= (0) || !args[0]->IsFunction()) {
+      //return ThrowException(Exception::TypeError( String::New("Argument 0 must be a function"))); 
+      jsCallBack = Local<Function>::Cast(args[0]);
+    }
+    
+    // do a test call...
+    Handle<Object> tmpObj = Object::New();
+    Handle<Value> arguments[1];
+    Local<Value> ret;
+    arguments[0] = Number::New(bufferFrames);
+    if(!jsCallBack.IsEmpty()) ret = jsCallBack->Call(tmpObj,1,arguments);
+    
+    
+    printf("About to open stream\n\0");
     // function call is openStream(outputParams,inputParams,sampleType,sampleRate,&numFrames,&callback, userData)
     try {
-      audio->openStream(&outputParams,NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, &RtCb, (void *)&data);
+      audio->openStream(&outputParams,NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, &RtCb, (void *)&data, &outputOpts);
     }
     catch (RtError &e) {
       e.printMessage();
       exit (0);
     }
+    
+    
+    return True();
 }
 
 
@@ -394,9 +490,10 @@ Handle<Value> stopStream(const Arguments &args){
   HandleScope scope;
   
   RtAudio* audio = unwrapRtAudio(args.Holder());
+  printf("About to stop stream\n\0");
 
   try{
-    audio->stopStream();    
+    (*audio).stopStream();    
   }
   catch(RtError& e){
     e.printMessage();
@@ -407,17 +504,28 @@ Handle<Value> stopStream(const Arguments &args){
 Handle<Value> startStream(const Arguments &args){
   HandleScope scope;
   
+  printf("About to start stream\n\0");
   RtAudio* audio = unwrapRtAudio(args.Holder());
 
   try{
-    audio->startStream();    
+    (*audio).startStream();    
   }
   catch(RtError& e){
     e.printMessage();
   }
+   
+}
+
+Handle<Value> closeStream(const Arguments &args){
+  printf("About to close the stream\n\0");
+  RtAudio* audio = unwrapRtAudio(args.Holder());
   
+  if((*audio).isStreamOpen()) (*audio).closeStream();
   
 }
+
+
+//if ( dac.isStreamOpen() ) dac.closeStream();
 
 
 /**
@@ -448,6 +556,7 @@ Handle<ObjectTemplate> getRtAudioTemplate()
     tmplt->Set(String::New("openStream"), FunctionTemplate::New(openStream));
     tmplt->Set(String::New("startStream"), FunctionTemplate::New(startStream));
     tmplt->Set(String::New("stopStream"), FunctionTemplate::New(stopStream));  
+    tmplt->Set(String::New("closeStream"), FunctionTemplate::New(closeStream));  
     return scope.Close(tmplt);
 }
 /**

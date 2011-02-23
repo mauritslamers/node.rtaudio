@@ -23,3 +23,28 @@ sys.puts("      Default output device:  "); sys.puts(sys.inspect(audio.getDefaul
 sys.puts("      Default input device:   ");
 sys.puts(sys.inspect(audio.getDefaultInputDevice()));
 
+var freq = 440;
+var precalc = Math.PI * 2 * 1/44100 * freq;
+
+var cb = function(num){ 
+  //sys.log('Function called with ' + num);
+  var ret = [];
+  for(var i=0;i<num;i+=1){
+    ret[i] = Math.sin(precalc*i);
+  }
+  return ret;
+};
+
+sys.puts('Opening and starting audio stream from JS');
+audio.openStream();
+audio.startStream();
+
+setTimeout(1000,function(){
+  sys.puts('Stopping audio stream from JS');  
+  audio.stopStream();
+  audio.closeStream();
+});
+
+
+var repl = require('repl');
+repl.start();
