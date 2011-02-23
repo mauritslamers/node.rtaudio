@@ -373,27 +373,15 @@ Handle<Value> getDefaultInputDevice(const Arguments& args)
  *  @return Undefined
  */
  
- /*
- Persistent<Function> callback;
 
- //in C++ function
- if (args.Length() > 0)
- {
- callback = Persistent<Function>::New(Handle<Function>::Cast(args[0]));
- }
 
- //where you use the callback
- if (!callback.IsEmpty())
- {
- 	Handle<Value> arguments[1];
- 	arguments[0] = String::New("Hello, World!");
- 	callback->Call(context->Global(), 1, arguments);
- }
- */
+ #define INTERNAL_BUFFER_SIZE 8820000 // 100 seconds
+ double *internalBuffer[INTERNAL_BUFFER_SIZE]; // 1 second of stereo audio
+ double *readPointer;
+ unsigned int readCounter;
+ double *writePointer;
+ unsigned int writeCounter;
  
- 
- Handle<Function> jsCallBack;
- bool triggered = false;
  
 int RtCb(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames, double streamTime, RtAudioStreamStatus status, void* userData){
   
@@ -401,44 +389,35 @@ int RtCb(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames, doub
   
   unsigned int i,j;
   double *buffer = (double *) outputBuffer;
-
-  //Handle<Function> *userCb = (Handle <Function>*)userData;
   
-  Handle<Object> tmpObj = Object::New();
-  Handle<Value> arguments[1];
-  Local<Value> ret;
-  arguments[0] = Number::New(nBufferFrames);
-  //if(!jsCallBack.IsEmpty() && triggered){
-  //  printf("Callback is not empty!!\n\0");
-  //  triggered = true;
-  //} 
   if ( status ) std::cout << "Stream underflow detected!" << std::endl;
-  //if(!jsCallBack.IsEmpty()) ret = jsCallBack->Call(tmpObj,1,arguments);
-  if(!jsCallBack.IsEmpty()) ret = jsCallBack->Call(tmpObj,1,arguments);
   
-  //Handle<Value> ret = (*userCb)->Call(tmpObj,1,&bufSize);
-  //Local<Value> left;
-  //Local<Value> right;
   double sample = 0.0;
   for( i=0;i<nBufferFrames;i++){
     for( j=0; j<2; j++){
-      *buffer++ = sample;
-      if(sample<0.75) sample += 0.01;
-      if(sample>0.75) sample = -0.75;
+      *buffer++ = *readPointer;
+      readPointer++;
+      readCounter++;
+      if(readCounter>INTERNAL_BUFFER_SIZE){
+        readPointer = (double*) internalBuffer;
+        readCounter = 0;
+      } 
     }
   }
-  
   return 0;
-  
 } 
  
-//openStream(func) 
+
 Handle<Value> openStream(const Arguments& args)
 {
     HandleScope scope;
-    
-    //if(args.Length() == 0) return Undefined();
-    
+
+    // set read and write pointers to the internal buffer
+    readPointer = (double *)internalBuffer; 
+    writePointer = (double *)internalBuffer;
+    readCounter = 0;
+    writeCounter = 0;
+      
     RtAudio* audio = unwrapRtAudio(args.Holder());
     //RtAudio::StreamParameters outputParameters = streamParametersFrom(Object::Cast(*args[0]));
     //RtAudio::StreamParameters inputParameters = streamParametersFrom(Object::Cast(*args[1]));
@@ -450,37 +429,27 @@ Handle<Value> openStream(const Arguments& args)
     outputParams.deviceId = audio->getDefaultOutputDevice();
     outputParams.nChannels = 2;
     outputParams.firstChannel = 0;
-    
-    RtAudio::StreamOptions outputOpts;
-    outputOpts.numberOfBuffers = 512;
-    
+        
     unsigned int sampleRate = 44100;
     unsigned int bufferFrames = 44100;
     double data[2];
     
-    if (args.Length() <= (0) || !args[0]->IsFunction()) {
-      //return ThrowException(Exception::TypeError( String::New("Argument 0 must be a function"))); 
-      jsCallBack = Local<Function>::Cast(args[0]);
-    }
-    
     // do a test call...
-    Handle<Object> tmpObj = Object::New();
+/*    Handle<Object> tmpObj = Object::New();
     Handle<Value> arguments[1];
     Local<Value> ret;
     arguments[0] = Number::New(bufferFrames);
-    if(!jsCallBack.IsEmpty()) ret = jsCallBack->Call(tmpObj,1,arguments);
+    if(!jsCallBack.IsEmpty()) ret = jsCallBack->Call(tmpObj,1,arguments); */
     
     
-    printf("About to open stream\n\0");
     // function call is openStream(outputParams,inputParams,sampleType,sampleRate,&numFrames,&callback, userData)
     try {
-      audio->openStream(&outputParams,NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, &RtCb, (void *)&data, &outputOpts);
+      audio->openStream(&outputParams,NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, &RtCb, (void *)&data);
     }
     catch (RtError &e) {
       e.printMessage();
       exit (0);
     }
-    
     
     return True();
 }
@@ -491,13 +460,16 @@ Handle<Value> stopStream(const Arguments &args){
   
   RtAudio* audio = unwrapRtAudio(args.Holder());
   printf("About to stop stream\n\0");
-
+  
   try{
     (*audio).stopStream();    
   }
   catch(RtError& e){
     e.printMessage();
   }
+  
+  //clean up
+  //delete[] internalBuffer;
   
 }
 
@@ -524,8 +496,56 @@ Handle<Value> closeStream(const Arguments &args){
   
 }
 
+ /*
+ Persistent<Function> callback;
 
-//if ( dac.isStreamOpen() ) dac.closeStream();
+ //in C++ function
+ if (args.Length() > 0)
+ {
+ callback = Persistent<Function>::New(Handle<Function>::Cast(args[0]));
+ }
+
+ //where you use the callback
+ if (!callback.IsEmpty())
+ {
+ 	Handle<Value> arguments[1];
+ 	arguments[0] = String::New("Hello, World!");
+ 	callback->Call(context->Global(), 1, arguments);
+ }
+
+#define REQ_FUN_ARG(I, VAR) \
+if (args.Length() <= (I) || !args[I]->IsFunction()) \
+return ThrowException(Exception::TypeError( \
+String::New("Argument " #I " must be a function"))); \
+Local<Function> VAR = Local<Function>::Cast(args[I]);
+
+ */
+
+
+Handle<Value> playSound(const Arguments& args){
+  
+  HandleScope scope;
+  
+   //RtAudio::StreamParameters outputParameters = streamParametersFrom(Object::Cast(*args[0]));
+  if(args.Length() == 0) return Undefined();
+  
+  Local<Array> sound = Local<Array>::Cast(args[0]);
+  Local<Value> left = sound.Get(Number::New(0));
+  
+  if(left.IsArray()){
+    Local<Array> right = sound.Get(Number::New(1));
+  }
+  
+  
+  RtAudio* audio = unwrapRtAudio(args.Holder());  
+  
+  
+  
+}
+
+
+
+
 
 
 /**
@@ -553,10 +573,6 @@ Handle<ObjectTemplate> getRtAudioTemplate()
     tmplt->Set(String::New("getDefaultOutputDevice"), FunctionTemplate::New(getDefaultOutputDevice));
     tmplt->Set(String::New("getDefaultInputDevice"), FunctionTemplate::New(getDefaultInputDevice));
     tmplt->Set(String::New("toString"), FunctionTemplate::New(toString));
-    tmplt->Set(String::New("openStream"), FunctionTemplate::New(openStream));
-    tmplt->Set(String::New("startStream"), FunctionTemplate::New(startStream));
-    tmplt->Set(String::New("stopStream"), FunctionTemplate::New(stopStream));  
-    tmplt->Set(String::New("closeStream"), FunctionTemplate::New(closeStream));  
     return scope.Close(tmplt);
 }
 /**
