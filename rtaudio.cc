@@ -381,6 +381,10 @@ Handle<Value> getDefaultInputDevice(const Arguments& args)
  unsigned int readCounter;
  double *writePointer;
  unsigned int writeCounter;
+
+ void writeSample(int channel, double sample){
+   
+ }
  
  
 int RtCb(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames, double streamTime, RtAudioStreamStatus status, void* userData){
@@ -530,11 +534,29 @@ Handle<Value> playSound(const Arguments& args){
   if(args.Length() == 0) return Undefined();
   
   Local<Array> sound = Local<Array>::Cast(args[0]);
-  Local<Value> left = sound.Get(Number::New(0));
-  
-  if(left.IsArray()){
-    Local<Array> right = sound.Get(Number::New(1));
+  int numary = sound.Length();
+  if(numary == 1){ // one track, take samples and put both left and right
+    Local<Value> mono = sound.Get(Number::New(0));
+    if(mono.IsArray()){
+    }
   }
+  else { // only take two tracks (for now), take samples and put in left and right
+    Local<Value> left = sound.Get(Number::New(0));
+    Local<Value> right = sound.Get(Number::New(1));
+    if(left.IsArray()){
+      int len=left.Length();
+      for(int i=0;i<len:i++){
+	Local<Value> sample = left.Get(Number::New(i));
+        double actsample = sample.Value();
+
+        // write samples by getting left.Get(Number::New(i)
+      }
+    }
+    if(right.IsArray()){
+
+    }
+  }
+  
   
   
   RtAudio* audio = unwrapRtAudio(args.Holder());  
